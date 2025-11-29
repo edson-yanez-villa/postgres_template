@@ -1,0 +1,74 @@
+services:
+  pg16:
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    container_name: pg16
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command:
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/pg_hba.conf"
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      odoo-net:
+        aliases:
+          - pg16
+
+  pgexporter:
+    image: prometheuscommunity/postgres-exporter
+    env_file:
+      - .env
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg16:5432/${POSTGRES_DB}?sslmode=disable"
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+    depends_on:
+      pg16:
+        condition: service_healthy
+    networks:
+      - odoo-net
+
+  backup:
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    profiles:
+      - backup
+    env_file:
+      - .env
+    entrypoint: [ "/bin/bash", "-c" ]
+    command: >
+      mkdir -p /backups && pg_dumpall -h ${POSTGRES_HOST:-pg16} -p 5432 -U ${POSTGRES_USER} > /backups/backup-$(date +%F_%H%M%S).sql
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      pg16:
+        condition: service_healthy
+    networks:
+      - odoo-net
+
+networks:
+  odoo-net:
+    external: true
+
+volumes:
+  db-data:
+    name: "${POSTGRES_INSTANCE:-pg16}-data"

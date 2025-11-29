@@ -1,0 +1,12 @@
+# Data & backups
+db-data/
+backups/
+
+# Secrets
+.env
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
